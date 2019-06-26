@@ -16,6 +16,8 @@ Output :
 
 ## How to use ?
 
+[Autoencoder keras documentation](https://blog.keras.io/building-autoencoders-in-keras.html)
+
 Detailed later...
 
 ## License

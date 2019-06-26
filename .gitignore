@@ -1,2 +1,11 @@
 __pycache__
 .vscode
+
+# data folders
+data
+learned_zones
+threshold_map
+models_info
+saved_models
+custom_norm
+corr_indices

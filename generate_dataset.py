@@ -41,7 +41,7 @@ output_data_folder      = cfg.output_data_folder
 
 generic_output_file_svd = '_random.csv'
 
-def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_zones = 4, _random=0):
+def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_zones = 4, _random=0, _only_noisy=0):
 
     output_train_filename = _filename + ".train"
     output_test_filename = _filename + ".test"
@@ -65,6 +65,14 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
 
         scene_path = os.path.join(dataset_path, folder_scene)
 
+        config_file_path = os.path.join(scene_path, config_filename)
+
+        # only get last image path
+        with open(config_file_path, "r") as config_file:
+            last_image_name = config_file.readline().strip()
+
+        ref_image_path = os.path.join(scene_path, last_image_name)
+
         zones_indices = zones
 
         # shuffle list of zones (=> randomly choose zones)
@@ -87,6 +95,8 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
             for i in learned_zones_indices:
                 f.write(str(i) + ';')
 
+        ref_image_blocks = processing.divide_in_blocks(Image.open(ref_image_path), cfg.keras_img_size)
+
         for id_zone, index_folder in enumerate(zones_indices):
 
             index_str = str(index_folder)
@@ -96,8 +106,13 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
             current_zone_folder = "zone" + index_str
             zone_path = os.path.join(scene_path, current_zone_folder)
 
-            # custom path for interval of reconstruction and metric
+            # path of zone of reference image
+            ref_image_block_path = os.path.join(zone_path, last_image_name)
 
+            if not os.path.exists(ref_image_block_path):
+                ref_image_blocks[id_zone].save(ref_image_block_path)
+
+            # custom path for interval of reconstruction and metric
             metrics_path = []
 
             for transformation in _transformations:
@@ -106,48 +121,49 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
 
             # as labels are same for each metric
             for label in os.listdir(metrics_path[0]):
+                
 
-                label_metrics_path = []
-
-                for path in metrics_path:
-                    label_path = os.path.join(path, label)
-                    label_metrics_path.append(label_path)
-
-                # getting images list for each metric
-                metrics_images_list = []
+                if (label == cfg.not_noisy_folder and _only_noisy == 0) or label == cfg.noisy_folder:
                     
-                for label_path in label_metrics_path:
-                    images = sorted(os.listdir(label_path))
-                    metrics_images_list.append(images)
+                    label_metrics_path = []
 
-                # construct each line using all images path of each
-                for index_image in range(0, len(metrics_images_list[0])):
-                    
-                    images_path = []
+                    for path in metrics_path:
+                        label_path = os.path.join(path, label)
+                        label_metrics_path.append(label_path)
 
-                    # getting images with same index and hence name for each metric (transformation)
-                    for index_metric in range(0, len(metrics_path)):
-                        img_path = metrics_images_list[index_metric][index_image]
-                        images_path.append(os.path.join(label_metrics_path[index_metric], img_path))
+                    # getting images list for each metric
+                    metrics_images_list = []
+                        
+                    for label_path in label_metrics_path:
+                        images = sorted(os.listdir(label_path))
+                        metrics_images_list.append(images)
 
-                    if label == cfg.noisy_folder:
-                        line = '1;'
-                    else:
-                        line = '0;'
+                    # construct each line using all images path of each
+                    for index_image in range(0, len(metrics_images_list[0])):
+                        
+                        images_path = []
 
-                    # compute line information with all images paths
-                    for id_path, img_path in enumerate(images_path):
-                        if id_path < len(images_path) - 1:
-                            line = line + img_path + '::'
+
+                        # getting images with same index and hence name for each metric (transformation)
+                        for index_metric in range(0, len(metrics_path)):
+                            img_path = metrics_images_list[index_metric][index_image]
+                            images_path.append(os.path.join(label_metrics_path[index_metric], img_path))
+
+                        line = ref_image_block_path + ';'
+
+                        # compute line information with all images paths
+                        for id_path, img_path in enumerate(images_path):
+                            if id_path < len(images_path) - 1:
+                                line = line + img_path + '::'
+                            else:
+                                line = line + img_path
+                        
+                        line = line + '\n'
+
+                        if id_zone < _nb_zones and folder_scene in _scenes:
+                            train_file_data.append(line)
                         else:
-                            line = line + img_path
-                    
-                    line = line + '\n'
-
-                    if id_zone < _nb_zones and folder_scene in _scenes:
-                        train_file_data.append(line)
-                    else:
-                        test_file_data.append(line)
+                            test_file_data.append(line)
 
     train_file = open(output_train_filename, 'w')
     test_file = open(output_test_filename, 'w')
@@ -181,16 +197,18 @@ def main():
     parser.add_argument('--nb_zones', type=int, help='Number of zones to use for training data set', choices=list(range(1, 17)))
     parser.add_argument('--renderer', type=str, help='Renderer choice in order to limit scenes used', choices=cfg.renderer_choices, default='all')
     parser.add_argument('--random', type=int, help='Data will be randomly filled or not', choices=[0, 1])
+    parser.add_argument('--only_noisy', type=int, help='Only noisy will be used', choices=[0, 1])
 
     args = parser.parse_args()
 
-    p_filename = args.output
-    p_metrics  = list(map(str.strip, args.metrics.split(',')))
-    p_params   = list(map(str.strip, args.params.split('::')))
-    p_scenes   = args.scenes.split(',')
-    p_nb_zones = args.nb_zones
-    p_renderer = args.renderer
-    p_random   = args.random
+    p_filename   = args.output
+    p_metrics    = list(map(str.strip, args.metrics.split(',')))
+    p_params     = list(map(str.strip, args.params.split('::')))
+    p_scenes     = args.scenes.split(',')
+    p_nb_zones   = args.nb_zones
+    p_renderer   = args.renderer
+    p_random     = args.random
+    p_only_noisy = args.only_noisy
 
     # create list of Transformation
     transformations = []
@@ -214,7 +232,7 @@ def main():
         scenes_selected.append(scenes_list[index])
 
     # create database using img folder (generate first time only)
-    generate_data_model(scenes_list, p_filename, transformations, scenes_selected, p_nb_zones, p_random)
+    generate_data_model(scenes_list, p_filename, transformations, scenes_selected, p_nb_zones, p_random, p_only_noisy)
 
 if __name__== "__main__":
     main()
