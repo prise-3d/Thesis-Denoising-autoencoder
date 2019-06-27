@@ -1,0 +1,8 @@
+Pillow
+keras
+tensorflow
+sklearn
+matplotlib
+path.py
+ipfml
+cv2

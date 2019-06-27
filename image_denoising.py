@@ -3,35 +3,41 @@ from keras.models import Model
 from keras import backend as K
 from keras.callbacks import TensorBoard
 
+import os
+import json
 import pandas as pd
 import numpy as np
-from sklearn.utils import shuffle
-
-from modules.utils import config as cfg
-import cv2
-
 import argparse
 
-def generate_model(input_shape=(3, 200, 200)):
-    print(input_shape)
+from sklearn.utils import shuffle
+import cv2
+
+from modules.utils import config as cfg
+
+def generate_model(input_shape):
+
     input_img = Input(shape=input_shape)  # adapt this if using `channels_first` image data format
 
     x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(input_img)
     x = MaxPooling3D((1, 2, 2), padding='same')(x)
     x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(x)
+    x = MaxPooling3D((1, 2, 2), padding='same')(x)
+    x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(x)
     encoded = MaxPooling3D((1, 2, 2), padding='same')(x)
 
+    print(encoded)
 
     x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(encoded)
     x = UpSampling3D((1, 2, 2))(x)
     x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(x)
     x = UpSampling3D((1, 2, 2))(x)
-    decoded = Conv3D(1, (1, 3, 3), activation='sigmoid', padding='same')(x)
+    x = Conv3D(32, (1, 3, 3), activation='relu', padding='same')(x)
+    x = UpSampling3D((1, 2, 2))(x)
+    decoded = Conv3D(3, (1, 3, 3), activation='sigmoid', padding='same')(x)
 
     autoencoder = Model(input_img, decoded)
 
-    # TODO : check if 
-    autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+    autoencoder.compile(optimizer='adadelta', loss='mse')
 
     return autoencoder
 
@@ -102,16 +108,12 @@ def main():
     y_dataset_train = dataset_train[0].apply(lambda x: cv2.imread(x).reshape(input_shape))
     y_dataset_test = dataset_test[0].apply(lambda x: cv2.imread(x).reshape(input_shape))
 
-    # format correct data
-    x_data_train = np.array([item for item in x_dataset_train.values])
-    #x_data_train = np.array(x_dataset_train.values)
-    x_data_test = np.array([item for item in x_dataset_test.values])
-    #x_data_test = np.array(x_dataset_test.values)
+    # format data correctly
+    x_data_train = np.array([item[0].reshape(input_shape) for item in x_dataset_train.values])
+    x_data_test = np.array([item[0].reshape(input_shape) for item in x_dataset_test.values])
 
-    y_data_train = np.array([item for item in y_dataset_train.values])
-    #y_data_train = np.array(y_dataset_train.values)
-    y_data_test = np.array([item for item in y_dataset_test.values])
-    #y_data_test = np.array(y_dataset_test.values)
+    y_data_train = np.array([item[0].reshape(input_shape) for item in y_dataset_train.values])
+    y_data_test = np.array([item[0].reshape(input_shape) for item in y_dataset_test.values])
 
     # load model
     autoencoder = generate_model(input_shape)
@@ -124,7 +126,21 @@ def main():
                     validation_data=(x_data_test, y_data_test),
                     callbacks=[TensorBoard(log_dir='/tmp/autoencoder', histogram_freq=0, write_graph=False)])
 
-    # save model
+    ##############
+    # save model #
+    ##############
+    if not os.path.exists(cfg.saved_models_folder):
+        os.makedirs(cfg.saved_models_folder)
+
+    # save the model into HDF5 file
+    model_output_path = os.path.join(cfg.saved_models_folder, p_output + '.json')
+    json_model_content = autoencoder.to_json()
+
+    with open(model_output_path, 'w') as f:
+        print("Model saved into ", model_output_path)
+        json.dump(json_model_content, f, indent=4)
+
+    autoencoder.save_weights(model_output_path.replace('.json', '.h5'))
     
 if __name__ == "__main__":
     main()

@@ -158,8 +158,8 @@ def generate_data(transformation):
                     for rotation in rotations:
                         rotated_output_img = flip.rotate(rotation)
 
-                        output_reconstructed_filename = img_path.split('/')[-1].replace('.png', '') + '_' + zones_folder[id_block]
-                        output_reconstructed_filename = output_reconstructed_filename + '_' + img_flip_labels[id] + '_' + str(rotation) + '.png'
+                        output_reconstructed_filename = img_path.split('/')[-1].replace('.png', '') + '_' + zones_folder[id_block] + cfg.post_image_name_separator
+                        output_reconstructed_filename = output_reconstructed_filename + img_flip_labels[id] + '_' + str(rotation) + '.png'
                         output_reconstructed_path = os.path.join(label_path, output_reconstructed_filename)
 
                         rotated_output_img.save(output_reconstructed_path)
