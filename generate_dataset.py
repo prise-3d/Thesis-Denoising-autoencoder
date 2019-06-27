@@ -13,13 +13,12 @@ import time
 import json
 
 from PIL import Image
-from ipfml import processing, metrics, utils
+from ipfml.processing.segmentation import divide_in_blocks
 from skimage import color
 
 from modules.utils import config as cfg
 from modules.utils import data as dt
 
-from transformation_functions import svd_reconstruction
 from modules.classes.Transformation import Transformation
 
 # getting configuration information
@@ -95,7 +94,7 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
             for i in learned_zones_indices:
                 f.write(str(i) + ';')
 
-        ref_image_blocks = processing.divide_in_blocks(Image.open(ref_image_path), cfg.keras_img_size)
+        ref_image_blocks = divide_in_blocks(Image.open(ref_image_path), cfg.keras_img_size)
 
         for id_zone, index_folder in enumerate(zones_indices):
 
@@ -107,21 +106,56 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
             zone_path = os.path.join(scene_path, current_zone_folder)
 
             # path of zone of reference image
-            ref_image_block_path = os.path.join(zone_path, last_image_name)
+            # ref_image_block_path = os.path.join(zone_path, last_image_name)
 
-            if not os.path.exists(ref_image_block_path):
-                ref_image_blocks[id_zone].save(ref_image_block_path)
+            # compute augmented images for ref image
+            current_ref_zone_image = ref_image_blocks[id_zone]
+
+            ref_image_name_prefix = last_image_name.replace('.png', '')
+            dt.augmented_data_image(current_ref_zone_image, zone_path, ref_image_name_prefix)
+
+            # get list of all augmented ref images
+            ref_augmented_images = [os.path.join(zone_path, f) for f in os.listdir(zone_path) if ref_image_name_prefix in f]
 
             # custom path for interval of reconstruction and metric
             metrics_path = []
 
             for transformation in _transformations:
-                metric_interval_path = os.path.join(zone_path, transformation.getTransformationPath())
-                metrics_path.append(metric_interval_path)
+                
+                # check if it's a static content and create augmented images if necessary
+                if transformation.getName() == 'static':
+                    
+                    # {sceneName}/zoneXX/static
+                    static_metric_path = os.path.join(zone_path, transformation.getName())
+
+                    # img.png
+                    image_name = transformation.getParam().split('/')[-1]
+
+                    # {sceneName}/zoneXX/static/img
+                    image_prefix_name = image_name.replace('.png', '')
+                    image_folder_path = os.path.join(static_metric_path, image_prefix_name)
+                    
+                    if not os.path.exists(image_folder_path):
+                        os.makedirs(image_folder_path)
+
+                    metrics_path.append(image_folder_path)
+
+                    # get image path to manage
+                    # {sceneName}/static/img.png
+                    transform_image_path = os.path.join(scene_path, transformation.getName(), image_name) 
+                    static_transform_image = Image.open(transform_image_path)
+
+                    static_transform_image_block = divide_in_blocks(static_transform_image, cfg.keras_img_size)[id_zone]
+
+                    # generate augmented data
+                    dt.augmented_data_image(static_transform_image_block, image_folder_path, image_prefix_name)
+
+                else:
+                    metric_interval_path = os.path.join(zone_path, transformation.getTransformationPath())
+                    metrics_path.append(metric_interval_path)
 
             # as labels are same for each metric
             for label in os.listdir(metrics_path[0]):
-                
 
                 if (label == cfg.not_noisy_folder and _only_noisy == 0) or label == cfg.noisy_folder:
                     
@@ -134,22 +168,44 @@ def generate_data_model(_scenes_list, _filename, _transformations, _scenes, _nb_
                     # getting images list for each metric
                     metrics_images_list = []
                         
-                    for label_path in label_metrics_path:
-                        images = sorted(os.listdir(label_path))
-                        metrics_images_list.append(images)
+                    for index_metric, label_path in enumerate(label_metrics_path):
+
+                        if _transformations[index_metric].getName() == 'static':
+                            # by default append nothing..
+                            metrics_images_list.append([])
+                        else:
+                            images = sorted(os.listdir(label_path))
+                            metrics_images_list.append(images)
 
                     # construct each line using all images path of each
                     for index_image in range(0, len(metrics_images_list[0])):
                         
                         images_path = []
 
+                        # get information about rotation and flip from first transformation (need to be a not static transformation)
+                        current_post_fix =  metrics_images_list[0][index_image].split(cfg.post_image_name_separator)[-1]
 
                         # getting images with same index and hence name for each metric (transformation)
                         for index_metric in range(0, len(metrics_path)):
-                            img_path = metrics_images_list[index_metric][index_image]
-                            images_path.append(os.path.join(label_metrics_path[index_metric], img_path))
 
-                        line = ref_image_block_path + ';'
+                            # custom behavior for static transformation (need to check specific image)
+                            if _transformations[index_metric].getName() == 'static':
+                                # add static path with selecting correct data augmented image
+                                image_name = _transformations[index_metric].getParam().split('/')[-1].replace('.png', '')
+                                img_path = os.path.join(metrics_path[index_metric], image_name + cfg.post_image_name_separator + current_post_fix)
+                                images_path.append(img_path)
+                            else:
+                                img_path = metrics_images_list[index_metric][index_image]
+                                images_path.append(os.path.join(label_metrics_path[index_metric], img_path))
+
+                        # get information about rotation and flip
+                        current_post_fix = images_path[0].split(cfg.post_image_name_separator)[-1]
+
+                        # get ref block which matchs we same information about rotation and flip
+                        augmented_ref_image_block_path = next(img for img in ref_augmented_images 
+                                                              if img.split(cfg.post_image_name_separator)[-1] == current_post_fix)
+
+                        line = augmented_ref_image_block_path + ';'
 
                         # compute line information with all images paths
                         for id_path, img_path in enumerate(images_path):
