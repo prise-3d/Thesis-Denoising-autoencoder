@@ -6,17 +6,19 @@ Created on Wed Jun 19 11:47:42 2019
 @author: jbuisine
 """
 
+# main imports
 import sys, os, argparse
 import numpy as np
-import random
-import time
-import json
 
+# images processing imports
 from PIL import Image
-from ipfml import processing, metrics, utils
-from skimage import color
+from ipfml.processing.segmentation import divide_in_blocks
 
-from modules.utils import config as cfg
+# modules imports
+sys.path.insert(0, '') # trick to enable import of main folder module
+
+import custom_config as cfg
+from modules.utils.data import get_scene_image_quality
 from modules.classes.Transformation import Transformation
 
 # getting configuration information
@@ -27,12 +29,11 @@ min_max_filename        = cfg.min_max_filename_extension
 # define all scenes values
 scenes_list             = cfg.scenes_names
 scenes_indexes          = cfg.scenes_indices
-choices                 = cfg.normalization_choices
 path                    = cfg.dataset_path
 zones                   = cfg.zones_indices
 seuil_expe_filename     = cfg.seuil_expe_filename
 
-metric_choices          = cfg.metric_choices_labels
+features_choices        = cfg.features_choices_labels
 output_data_folder      = cfg.output_data_folder
 
 generic_output_file_svd = '_random.csv'
@@ -64,7 +65,7 @@ def generate_data(transformation):
 
         # construct each zones folder name
         zones_folder = []
-        metrics_folder = []
+        features_folder = []
         zones_threshold = []
 
         # get zones list info
@@ -80,45 +81,40 @@ def generate_data(transformation):
             with open(os.path.join(zone_path, cfg.seuil_expe_filename)) as f:
                 zones_threshold.append(int(f.readline()))
 
-            # custom path for metric
-            metric_path = os.path.join(zone_path, transformation.getName())
+            # custom path for feature
+            feature_path = os.path.join(zone_path, transformation.getName())
 
-            if not os.path.exists(metric_path):
-                os.makedirs(metric_path)
+            if not os.path.exists(feature_path):
+                os.makedirs(feature_path)
 
-            # custom path for interval of reconstruction and metric
-            metric_interval_path = os.path.join(zone_path, transformation.getTransformationPath())
-            metrics_folder.append(metric_interval_path)
+            # custom path for interval of reconstruction and feature
+            feature_interval_path = os.path.join(zone_path, transformation.getTransformationPath())
+            features_folder.append(feature_interval_path)
 
-            if not os.path.exists(metric_interval_path):
-                os.makedirs(metric_interval_path)
+            if not os.path.exists(feature_interval_path):
+                os.makedirs(feature_interval_path)
 
             # create for each zone the labels folder
             labels = [cfg.not_noisy_folder, cfg.noisy_folder]
 
             for label in labels:
-                label_folder = os.path.join(metric_interval_path, label)
+                label_folder = os.path.join(feature_interval_path, label)
 
                 if not os.path.exists(label_folder):
                     os.makedirs(label_folder)
 
-        
 
-        current_counter_index = int(start_index_image)
-        end_counter_index = int(end_index_image)
+        # get all images of folder
+        scene_images = sorted([os.path.join(scene_path, img) for img in os.listdir(scene_path) if cfg.scene_image_extension in img])
+        number_scene_image = len(scene_images)
 
         # for each images
-        while(current_counter_index <= end_counter_index):
-
-            current_counter_index_str = str(current_counter_index)
-
-            while len(start_index_image) > len(current_counter_index_str):
-                current_counter_index_str = "0" + current_counter_index_str
-
-            img_path = os.path.join(scene_path, prefix_image_name + current_counter_index_str + ".png")
+        for id_img, img_path in enumerate(scene_images):
 
             current_img = Image.open(img_path)
-            img_blocks = processing.divide_in_blocks(current_img, cfg.keras_img_size)
+            img_blocks = divide_in_blocks(current_img, cfg.keras_img_size)
+
+            current_quality_index = int(get_scene_image_quality(img_path))
 
             for id_block, block in enumerate(img_blocks):
 
@@ -135,10 +131,10 @@ def generate_data(transformation):
                 # current output image
                 output_block_img = Image.fromarray(output_block)
 
-                label_path = metrics_folder[id_block]
+                label_path = features_folder[id_block]
 
                 # get label folder for block
-                if current_counter_index > zones_threshold[id_block]:
+                if current_quality_index > zones_threshold[id_block]:
                     label_path = os.path.join(label_path, cfg.not_noisy_folder)
                 else:
                     label_path = os.path.join(label_path, cfg.noisy_folder)
@@ -164,13 +160,8 @@ def generate_data(transformation):
 
                         rotated_output_img.save(output_reconstructed_path)
 
-
-            start_index_image_int = int(start_index_image)
-            print(transformation.getName() + "_" + folder_scene + " - " + "{0:.2f}".format((current_counter_index - start_index_image_int) / (end_counter_index - start_index_image_int)* 100.) + "%")
+            print(transformation.getName() + "_" + folder_scene + " - " + "{0:.2f}".format(((id_img + 1) / number_scene_image)* 100.) + "%")
             sys.stdout.write("\033[F")
-
-            current_counter_index += step_counter
-
 
         print('\n')
 
@@ -179,32 +170,32 @@ def generate_data(transformation):
 
 def main():
 
-    parser = argparse.ArgumentParser(description="Compute and prepare data of metric of all scenes using specific interval if necessary")
+    parser = argparse.ArgumentParser(description="Compute and prepare data of feature of all scenes using specific interval if necessary")
 
-    parser.add_argument('--metrics', type=str, 
-                                     help="list of metrics choice in order to compute data",
+    parser.add_argument('--features', type=str, 
+                                     help="list of features choice in order to compute data",
                                      default='svd_reconstruction, ipca_reconstruction',
                                      required=True)
     parser.add_argument('--params', type=str, 
-                                    help="list of specific param for each metric choice (See README.md for further information in 3D mode)", 
+                                    help="list of specific param for each feature choice (See README.md for further information in 3D mode)", 
                                     default='100, 200 :: 50, 25',
                                     required=True)
 
     args = parser.parse_args()
 
-    p_metrics  = list(map(str.strip, args.metrics.split(',')))
+    p_features = list(map(str.strip, args.features.split(',')))
     p_params   = list(map(str.strip, args.params.split('::')))
 
     transformations = []
 
-    for id, metric in enumerate(p_metrics):
+    for id, feature in enumerate(p_features):
 
-        if metric not in metric_choices:
-            raise ValueError("Unknown metric, please select a correct metric : ", metric_choices)
+        if feature not in features_choices:
+            raise ValueError("Unknown feature, please select a correct feature : ", features_choices)
 
-        transformations.append(Transformation(metric, p_params[id]))
+        transformations.append(Transformation(feature, p_params[id]))
 
-    # generate all or specific metric data
+    # generate all or specific feature data
     for transformation in transformations:
         generate_data(transformation)
 

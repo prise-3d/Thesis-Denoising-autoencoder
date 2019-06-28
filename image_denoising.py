@@ -1,18 +1,22 @@
-from keras.layers import Input, Conv3D, MaxPooling3D, UpSampling3D
-from keras.models import Model
-from keras import backend as K
-from keras.callbacks import TensorBoard
-
+# main imports
 import os
 import json
 import pandas as pd
 import numpy as np
 import argparse
 
+# model imports
+from keras.layers import Input, Conv3D, MaxPooling3D, UpSampling3D
+from keras.models import Model
+from keras import backend as K
+from keras.callbacks import TensorBoard
 from sklearn.utils import shuffle
+
+# image processing imports
 import cv2
 
-from modules.utils import config as cfg
+# modules imports
+import custom_config as cfg
 
 def generate_model(input_shape):
 

@@ -30,12 +30,12 @@ pip install -r requirements.txt
 
 Generate reconstructed data from specific method of reconstruction (run only once time or clean data folder before):
 ```
-python generate_reconstructed_data.py -h
+python generate/generate_reconstructed_data.py -h
 ```
 
 Generate custom dataset from one reconstructed method or multiples (implemented later)
 ```
-python generate_dataset.py -h
+python generate/generate_dataset.py -h
 ```
 
 ### Reconstruction parameter (--params)
@@ -56,7 +56,7 @@ List of expected parameter by reconstruction method:
 
 **__Example:__**
 ```bash
-python generate_dataset.py --output data/output_data_filename --metrics "svd_reconstruction, ipca_reconstruction, fast_ica_reconstruction" --renderer "maxwell" --scenes "A, D, G, H" --params "100, 200 :: 50, 10 :: 50" --nb_zones 10 --random 1 --only_noisy 1
+python generate/generate_dataset.py --output data/output_data_filename --metrics "svd_reconstruction, ipca_reconstruction, fast_ica_reconstruction" --renderer "maxwell" --scenes "A, D, G, H" --params "100, 200 :: 50, 10 :: 50" --nb_zones 10 --random 1 --only_noisy 1
 ```
 
 Then, run the model:
